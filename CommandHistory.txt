@@ -1,0 +1,10 @@
+mkdir -p vibepad
+ls
+cd vibepad
+sudo apt update && sudo apt install python3 python3-tk git
+git status
+git init
+kate vibepad.py 
+python3 vibepad.py
+chmod +x vibepad.py
+./vibepad.py
