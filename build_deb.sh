@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-VERSION="1.0.0"
+VERSION=$(grep -m1 '^VERSION' vibepad.py | cut -d'"' -f2)
 PKG="vibepad_${VERSION}"
 BUILD="build_deb/${PKG}"
 
@@ -11,6 +11,7 @@ mkdir -p "$BUILD/DEBIAN" "$BUILD/usr/bin" "$BUILD/usr/share/applications" "$BUIL
 cp vibepad.py "$BUILD/usr/bin/vibepad"
 chmod 755 "$BUILD/usr/bin/vibepad"
 cp README.md "$BUILD/usr/share/doc/vibepad/"
+cp LICENSE "$BUILD/usr/share/doc/vibepad/copyright"
 
 cat > "$BUILD/DEBIAN/control" << EOF
 Package: vibepad
@@ -19,9 +20,11 @@ Section: editors
 Priority: optional
 Architecture: all
 Depends: python3, python3-tk
-Maintainer: Your Name <you@example.com>
-Description: Simple text editor
+Maintainer: Iqbal Uddin Khan <your.email@example.com>
+Homepage: https://github.com/iqbalsound/vibepad
+Description: Simple text editor with themes
  VibePad is a lightweight text editor built with Python and Tkinter.
+ Version 2 adds Light, Dark and Green-on-Black themes.
 EOF
 
 cat > "$BUILD/usr/share/applications/vibepad.desktop" << EOF

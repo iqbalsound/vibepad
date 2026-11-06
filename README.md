@@ -142,3 +142,9 @@ lintian vibepad_1.0.0_all.deb
 ```
 
 **You’ll see some warnings (like missing changelog or copyright). Those only matter if you publish to official repositories.**
+## Author
+Iqbal Uddin Khan
+GitHub: https://github.com/iqbalsound
+
+## License
+MIT. See the LICENSE file.

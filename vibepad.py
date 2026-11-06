@@ -3,10 +3,20 @@
 
 import json
 import os
+import webbrowser
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
+
+# ---- About box info: edit these to your own details ----
+APP_NAME = "VibePad"
+APP_DESCRIPTION = "A simple, fast text editor with Light, Dark\nand Green-on-Black themes."
+AUTHOR_NAME = "Iqbal Uddin Khan"
+AUTHOR_TITLE = "Assistant Professor | DIT -HU -- NN Site KHI"        # <- edit
+AUTHOR_EMAIL = "iqbalsound@yahoo.com"         # <- edit
+GITHUB_URL = "https://github.com/iqbalsound/vibepad"   # <- check repo name
+COPYRIGHT = "© 2026 Iqbal Uddin Khan. Released under the MIT License."
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "vibepad")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "settings.json")
@@ -211,8 +221,49 @@ class VibePad(tk.Tk):
             self.mark_dirty(True)
 
     def show_about(self):
-        messagebox.showinfo("About VibePad",
-                            f"VibePad {VERSION}\nA simple text editor built with Python and Tkinter.")
+        """A custom About window that follows the current theme."""
+        t = THEMES[self.theme_var.get()]
+        win = tk.Toplevel(self)
+        win.title(f"About {APP_NAME}")
+        win.configure(bg=t["bar_bg"], padx=28, pady=22)
+        win.resizable(False, False)
+        win.transient(self)                     # stays on top of the main window
+
+        def add_label(text, size=10, bold=False):
+            tk.Label(win, text=text, bg=t["bar_bg"], fg=t["bar_fg"],
+                     font=("DejaVu Sans", size, "bold" if bold else "normal"),
+                     justify="center").pack(pady=2)
+
+        add_label(APP_NAME, 22, bold=True)
+        add_label(f"Version {VERSION}", 11)
+        add_label(APP_DESCRIPTION, 10)
+
+        tk.Frame(win, height=1, bg=t["fg"]).pack(fill="x", pady=12)   # divider line
+
+        add_label("Developed by", 9)
+        add_label(AUTHOR_NAME, 14, bold=True)
+        add_label(AUTHOR_TITLE, 10)
+        add_label(AUTHOR_EMAIL, 10)
+
+        # Clickable link
+        link = tk.Label(win, text=GITHUB_URL, bg=t["bar_bg"], fg=t["fg"],
+                        cursor="hand2", font=("DejaVu Sans", 10, "underline"))
+        link.pack(pady=4)
+        link.bind("<Button-1>", lambda e: webbrowser.open(GITHUB_URL))
+
+        add_label(COPYRIGHT, 9)
+
+        tk.Button(win, text="Close", command=win.destroy,
+                  bg=t["bg"], fg=t["fg"], activebackground=t["select_bg"],
+                  activeforeground=t["select_fg"], relief="flat",
+                  padx=20, pady=4).pack(pady=(14, 0))
+
+        # Center the window over the main VibePad window
+        win.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() - win.winfo_width()) // 2
+        y = self.winfo_y() + (self.winfo_height() - win.winfo_height()) // 2
+        win.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        win.grab_set()                          # focus stays in About until closed
 
     # ---------- File actions ----------
     def confirm_discard(self):
