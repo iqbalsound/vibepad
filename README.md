@@ -7,6 +7,7 @@ A simple text editor for Linux (Ubuntu/Kubuntu) built with Python and Tkinter.
 - Undo/Redo, Cut/Copy/Paste, Find
 - Word and character count
 - Keyboard shortcuts
+- Themes: Light, Dark, Green on Black (Ctrl+T to switch)
 
 ## Run
     sudo apt install python3 python3-tk

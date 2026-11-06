@@ -1,37 +1,98 @@
 #!/usr/bin/env python3
-"""VibePad - a simple text editor built with Tkinter."""
+"""VibePad 2.0 - a simple text editor with Light, Dark and Green-on-Black themes."""
 
+import json
+import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
+
+VERSION = "2.0.0"
+
+CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "vibepad")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "settings.json")
+
+# Each theme is just a set of colors.
+THEMES = {
+    "Light": {
+        "bg": "#ffffff", "fg": "#1e1e1e", "cursor": "#000000",
+        "select_bg": "#b3d4fc", "select_fg": "#000000",
+        "bar_bg": "#f0f0f0", "bar_fg": "#1e1e1e",
+        "find_bg": "#ffeb3b", "find_fg": "#000000",
+    },
+    "Dark": {
+        "bg": "#1e1e1e", "fg": "#d4d4d4", "cursor": "#ffffff",
+        "select_bg": "#264f78", "select_fg": "#ffffff",
+        "bar_bg": "#2d2d2d", "bar_fg": "#d4d4d4",
+        "find_bg": "#7a6a00", "find_fg": "#ffffff",
+    },
+    "Green on Black": {
+        "bg": "#000000", "fg": "#00ff41", "cursor": "#00ff41",
+        "select_bg": "#006b1b", "select_fg": "#ffffff",
+        "bar_bg": "#0a0a0a", "bar_fg": "#00ff41",
+        "find_bg": "#00ff41", "find_fg": "#000000",
+    },
+}
+DEFAULT_THEME = "Dark"
 
 
 class VibePad(tk.Tk):
     def __init__(self):
         super().__init__()
         self.geometry("800x550")
-        self.current_file = None          # path of the open file (None = unsaved)
+        self.current_file = None      # path of the open file (None = unsaved)
+        self.is_dirty = False         # True when there are unsaved changes
+        self.menus = []               # every menu, so themes can recolor them
 
+        saved = self.load_settings().get("theme", DEFAULT_THEME)
+        if saved not in THEMES:
+            saved = DEFAULT_THEME
+        self.theme_var = tk.StringVar(value=saved)
+
+        self.build_status_bar()       # packed first so it never gets squeezed out
         self.build_text_area()
         self.build_menu()
-        self.build_status_bar()
         self.bind_shortcuts()
+        self.apply_theme(save=False)
 
-        self.protocol("WM_DELETE_WINDOW", self.exit_app)  # handle window close (X)
+        self.protocol("WM_DELETE_WINDOW", self.exit_app)
         self.update_title()
+        self.update_status()
+
+    # ---------- Settings ----------
+    def load_settings(self):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def save_settings(self):
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump({"theme": self.theme_var.get()}, f)
+        except OSError:
+            pass   # settings are optional; never crash because of them
 
     # ---------- UI building ----------
+    def build_status_bar(self):
+        self.status = tk.Label(self, text="", anchor="e", relief="sunken")
+        self.status.pack(side="bottom", fill="x")
+
     def build_text_area(self):
         frame = tk.Frame(self)
         frame.pack(fill="both", expand=True)
 
         self.text = tk.Text(frame, wrap="word", undo=True,
-                            font=("DejaVu Sans Mono", 12), padx=8, pady=8)
-        scroll = tk.Scrollbar(frame, command=self.text.yview)
-        self.text.config(yscrollcommand=scroll.set)
+                            font=("DejaVu Sans Mono", 12), padx=8, pady=8,
+                            borderwidth=0, highlightthickness=0)
+        self.scroll = tk.Scrollbar(frame, command=self.text.yview)
+        self.text.config(yscrollcommand=self.scroll.set)
 
-        scroll.pack(side="right", fill="y")
+        self.scroll.pack(side="right", fill="y")
         self.text.pack(side="left", fill="both", expand=True)
         self.text.focus_set()
+        self.text.bind("<<Modified>>", self.on_modified)
 
     def build_menu(self):
         menubar = tk.Menu(self)
@@ -62,45 +123,98 @@ class VibePad(tk.Tk):
         edit_menu.add_command(label="Select All", accelerator="Ctrl+A", command=self.select_all)
         menubar.add_cascade(label="Edit", menu=edit_menu)
 
-        self.config(menu=menubar)
+        view_menu = tk.Menu(menubar, tearoff=0)
+        for name in THEMES:
+            view_menu.add_radiobutton(label=name, variable=self.theme_var,
+                                      value=name, command=self.apply_theme)
+        view_menu.add_separator()
+        view_menu.add_command(label="Next Theme", accelerator="Ctrl+T",
+                              command=self.cycle_theme)
+        menubar.add_cascade(label="View", menu=view_menu)
 
-    def build_status_bar(self):
-        self.status = tk.Label(self, text="Words: 0 | Characters: 0",
-                               anchor="e", relief="sunken")
-        self.status.pack(side="bottom", fill="x")
-        self.text.bind("<<Modified>>", self.on_modified)
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="About VibePad", command=self.show_about)
+        menubar.add_cascade(label="Help", menu=help_menu)
+
+        self.config(menu=menubar)
+        self.menus = [menubar, file_menu, edit_menu, view_menu, help_menu]
 
     def bind_shortcuts(self):
-        self.bind("<Control-n>", lambda e: self.new_file())
-        self.bind("<Control-o>", lambda e: self.open_file())
-        self.bind("<Control-s>", lambda e: self.save_file())
-        self.bind("<Control-S>", lambda e: self.save_as())   # Ctrl+Shift+S
-        self.bind("<Control-q>", lambda e: self.exit_app())
-        self.bind("<Control-f>", lambda e: self.find_text())
-        self.bind("<Control-y>", lambda e: self.text.edit_redo())
+        # Bound on the text widget and "break" is returned, so Tk's built-in
+        # Emacs-style keys (Ctrl+O, Ctrl+A, Ctrl+Y, Ctrl+T...) don't also fire.
+        keys = {
+            "<Control-n>": self.new_file,
+            "<Control-o>": self.open_file,
+            "<Control-s>": self.save_file,
+            "<Control-S>": self.save_as,          # Ctrl+Shift+S
+            "<Control-q>": self.exit_app,
+            "<Control-f>": self.find_text,
+            "<Control-a>": self.select_all,
+            "<Control-y>": lambda: self.text.edit_redo(),
+            "<Control-t>": self.cycle_theme,
+        }
+        for sequence, action in keys.items():
+            self.text.bind(sequence, lambda e, f=action: self.run_shortcut(f))
 
-    # ---------- Helpers ----------
-    def on_modified(self, event=None):
-        """Runs every time the text changes."""
-        if self.text.edit_modified():
-            content = self.text.get("1.0", "end-1c")
-            words = len(content.split())
-            self.status.config(text=f"Words: {words} | Characters: {len(content)}")
-            self.text.edit_modified(False)   # reset so it can fire again
-            self.mark_dirty(True)
+    def run_shortcut(self, action):
+        action()
+        return "break"
+
+    # ---------- Themes ----------
+    def apply_theme(self, save=True):
+        t = THEMES[self.theme_var.get()]
+
+        self.text.config(bg=t["bg"], fg=t["fg"], insertbackground=t["cursor"],
+                         selectbackground=t["select_bg"],
+                         selectforeground=t["select_fg"],
+                         inactiveselectbackground=t["select_bg"])
+        self.text.tag_config("found", background=t["find_bg"], foreground=t["find_fg"])
+
+        self.config(bg=t["bar_bg"])
+        self.status.config(bg=t["bar_bg"], fg=t["bar_fg"])
+        self.scroll.config(bg=t["bar_bg"], troughcolor=t["bg"],
+                           activebackground=t["select_bg"])
+
+        for menu in self.menus:
+            menu.config(bg=t["bar_bg"], fg=t["bar_fg"],
+                        activebackground=t["select_bg"],
+                        activeforeground=t["select_fg"],
+                        selectcolor=t["bar_fg"])
+        if save:
+            self.save_settings()
+
+    def cycle_theme(self):
+        names = list(THEMES)
+        current = names.index(self.theme_var.get())
+        self.theme_var.set(names[(current + 1) % len(names)])
+        self.apply_theme()
+
+    # ---------- Status / title ----------
+    def update_status(self):
+        content = self.text.get("1.0", "end-1c")
+        self.status.config(text=f"Words: {len(content.split())} | Characters: {len(content)}")
 
     def update_title(self):
         name = self.current_file if self.current_file else "Untitled"
         star = "*" if self.is_dirty else ""
         self.title(f"{star}{name} - VibePad")
 
-    # "dirty" = has unsaved changes
-    is_dirty = False
-
     def mark_dirty(self, value):
         self.is_dirty = value
         self.update_title()
 
+    def on_modified(self, event=None):
+        """Runs every time the text changes."""
+        if self.text.edit_modified():
+            self.update_status()
+            self.text.edit_modified(False)   # reset so it can fire again
+            self.mark_dirty(True)
+
+    def show_about(self):
+        messagebox.showinfo("About VibePad",
+                            f"VibePad {VERSION}\nA simple text editor built with Python and Tkinter.")
+
+    # ---------- File actions ----------
     def confirm_discard(self):
         """Ask to save if there are unsaved changes. Returns False if user cancels."""
         if not self.is_dirty:
@@ -113,30 +227,35 @@ class VibePad(tk.Tk):
             return self.save_file()
         return True               # No -> discard
 
-    # ---------- File actions ----------
     def new_file(self):
         if self.confirm_discard():
             self.text.delete("1.0", tk.END)
+            self.text.edit_reset()
+            self.text.edit_modified(False)
             self.current_file = None
             self.mark_dirty(False)
+            self.update_status()
 
     def open_file(self):
         if not self.confirm_discard():
             return
         path = filedialog.askopenfilename(
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
-        if path:
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    content = f.read()
-            except (OSError, UnicodeDecodeError) as err:
-                messagebox.showerror("Error", f"Could not open file:\n{err}")
-                return
-            self.text.delete("1.0", tk.END)
-            self.text.insert("1.0", content)
-            self.text.edit_reset()           # clear undo history
-            self.current_file = path
-            self.mark_dirty(False)
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except (OSError, UnicodeDecodeError) as err:
+            messagebox.showerror("Error", f"Could not open file:\n{err}")
+            return
+        self.text.delete("1.0", tk.END)
+        self.text.insert("1.0", content)
+        self.text.edit_reset()               # clear undo history
+        self.text.edit_modified(False)
+        self.current_file = path
+        self.mark_dirty(False)
+        self.update_status()
 
     def save_file(self):
         if self.current_file is None:
@@ -169,15 +288,13 @@ class VibePad(tk.Tk):
     # ---------- Edit actions ----------
     def select_all(self):
         self.text.tag_add("sel", "1.0", "end")
-        return "break"
 
     def find_text(self):
-        term = simpledialog.askstring("Find", "Search for:")
+        term = simpledialog.askstring("Find", "Search for:", parent=self)
         self.text.tag_remove("found", "1.0", tk.END)
         if not term:
             return
-        start = "1.0"
-        count = 0
+        start, count = "1.0", 0
         while True:
             start = self.text.search(term, start, stopindex=tk.END, nocase=True)
             if not start:
@@ -186,7 +303,6 @@ class VibePad(tk.Tk):
             self.text.tag_add("found", start, end)
             start = end
             count += 1
-        self.text.tag_config("found", background="yellow", foreground="black")
         if count == 0:
             messagebox.showinfo("Find", "No matches found.")
 
