@@ -32,7 +32,7 @@ pip install pyinstaller
 -  --name vibepad sets the output name
 
 ### Step 3: Test
--  ./dist/vibepad
+`./dist/vibepad`
 
 ### Step 4: Install it system-wide (optional)
 `sudo cp dist/vibepad /usr/local/bin/vibepad`
